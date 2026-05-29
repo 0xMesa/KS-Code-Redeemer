@@ -2,17 +2,17 @@
 """
 Kingshot Gift Code Auto-Redeemer
 =================================
-Pollt regelmäßig neue Gift Codes von kingshot.net und löst sie
-automatisch für deinen Account ein.
+Polls kingshot.net for new gift codes and automatically redeems
+them for your account.
 
 Setup:
     pip install requests
 
-Konfiguration:
-    PLAYER_ID  → deine Ingame-Player-ID (steht unter Avatar → oben links)
-    INTERVAL   → wie oft in Minuten auf neue Codes geprüft wird (Standard: 15)
+Configuration:
+    PLAYER_ID        -> your in-game Player ID (tap Avatar -> top left)
+    INTERVAL_MINUTES -> how often to check for new codes (default: 15)
 
-Ausführen:
+Run:
     python kingshot_autoredeemer.py
 """
 
@@ -23,13 +23,13 @@ import requests
 from datetime import datetime
 from pathlib import Path
 
-# ─── KONFIGURATION ────────────────────────────────────────────────────────────
+# ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
-PLAYER_ID = "307980766"  # ← hier eintragen!
+PLAYER_ID = "YOUR_PLAYER_ID_HERE"  # <- enter your Player ID here!
 
-INTERVAL_MINUTES = 15   # Prüfintervall in Minuten
+INTERVAL_MINUTES = 15  # Check interval in minutes
 
-# ─── INTERNA (nicht ändern nötig) ─────────────────────────────────────────────
+# ─── INTERNALS (no changes needed below) ──────────────────────────────────────
 
 LOGIN_URL  = "https://kingshot-giftcode.centurygame.com/api/player"
 REDEEM_URL = "https://kingshot-giftcode.centurygame.com/api/gift_code"
@@ -37,22 +37,22 @@ CODES_API  = "https://kingshot.net/api/gift-codes"
 
 ENCRYPT_KEY = "mN4!pQs6JrYwV9"
 
-STATE_FILE  = Path(__file__).parent / "seen_codes.json"
-LOG_FILE    = Path(__file__).parent / "redeemer.log"
+STATE_FILE = Path(__file__).parent / "seen_codes.json"
+LOG_FILE   = Path(__file__).parent / "redeemer.log"
 
 RESULT_MESSAGES = {
-    "SUCCESS":            "✅ Erfolgreich eingelöst",
-    "RECEIVED":           "⏭️  Bereits eingelöst",
-    "SAME TYPE EXCHANGE": "✅ Erfolgreich eingelöst (gleicher Typ)",
-    "TIME ERROR":         "⌛ Code abgelaufen",
-    "USED":               "🚫 Einlöselimit erreicht",
-    "TIMEOUT RETRY":      "🔄 Server-Timeout, nochmal versucht",
+    "SUCCESS":            "✅ Successfully redeemed",
+    "RECEIVED":           "⏭️  Already redeemed",
+    "SAME TYPE EXCHANGE": "✅ Successfully redeemed (same type)",
+    "TIME ERROR":         "⌛ Code has expired",
+    "USED":               "🚫 Claim limit reached",
+    "TIMEOUT RETRY":      "🔄 Server timeout, retried",
 }
 
-# ─── HILFSFUNKTIONEN ──────────────────────────────────────────────────────────
+# ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 def log(msg: str):
-    """Schreibt eine Zeile mit Zeitstempel in Konsole und Logdatei."""
+    """Write a timestamped line to console and log file."""
     entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
     print(entry)
     with LOG_FILE.open("a", encoding="utf-8") as f:
@@ -60,7 +60,7 @@ def log(msg: str):
 
 
 def load_seen_codes() -> set:
-    """Lädt bereits gesehene/eingelöste Codes aus der lokalen JSON-Datei."""
+    """Load previously seen/redeemed codes from local JSON file."""
     if STATE_FILE.exists():
         try:
             return set(json.loads(STATE_FILE.read_text(encoding="utf-8")))
@@ -70,12 +70,12 @@ def load_seen_codes() -> set:
 
 
 def save_seen_codes(codes: set):
-    """Speichert die gesehenen Codes in der JSON-Datei."""
+    """Persist the set of seen codes to the local JSON file."""
     STATE_FILE.write_text(json.dumps(sorted(codes)), encoding="utf-8")
 
 
 def sign_payload(data: dict) -> dict:
-    """Signiert den Request-Payload mit MD5 (wie die offizielle Webseite)."""
+    """Sign the request payload with MD5 (mirrors the official website logic)."""
     sorted_keys = sorted(data.keys())
     encoded = "&".join(
         f"{k}={json.dumps(data[k]) if isinstance(data[k], dict) else data[k]}"
@@ -86,7 +86,7 @@ def sign_payload(data: dict) -> dict:
 
 
 def api_post(url: str, payload: dict, retries: int = 3, retry_delay: int = 3):
-    """Sendet einen signierten POST-Request mit automatischem Retry."""
+    """Send a signed POST request with automatic retry on failure."""
     signed = sign_payload(payload)
     for attempt in range(1, retries + 1):
         try:
@@ -96,26 +96,26 @@ def api_post(url: str, payload: dict, retries: int = 3, retry_delay: int = 3):
                 msg = data.get("msg", "")
                 if isinstance(msg, str) and msg.strip(".") == "TIMEOUT RETRY":
                     if attempt < retries:
-                        log(f"  ↩ Server fordert Retry (Versuch {attempt}/{retries}) ...")
+                        log(f"  ↩ Server requested retry (attempt {attempt}/{retries}) ...")
                         time.sleep(retry_delay)
                         continue
                 return data
-            log(f"  ⚠ HTTP {resp.status_code} bei Versuch {attempt}")
+            log(f"  ⚠ HTTP {resp.status_code} on attempt {attempt}")
         except requests.RequestException as e:
-            log(f"  ⚠ Netzwerkfehler (Versuch {attempt}): {e}")
+            log(f"  ⚠ Network error (attempt {attempt}): {e}")
         if attempt < retries:
             time.sleep(retry_delay)
     return None
 
-# ─── KERNLOGIK ────────────────────────────────────────────────────────────────
+# ─── CORE LOGIC ───────────────────────────────────────────────────────────────
 
 def fetch_active_codes() -> list[str]:
-    """Holt aktive Gift Codes von kingshot.net."""
+    """Fetch active gift codes from kingshot.net."""
     try:
         resp = requests.get(CODES_API, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        # API gibt Liste von Objekten oder direkt Strings zurück – beide Formate abfangen
+        # API may return a list of strings or a list of objects — handle both
         codes = []
         for item in data:
             if isinstance(item, str):
@@ -126,27 +126,27 @@ def fetch_active_codes() -> list[str]:
                     codes.append(str(code).strip())
         return codes
     except Exception as e:
-        log(f"⚠ Codes konnten nicht abgerufen werden: {e}")
+        log(f"⚠ Could not fetch codes: {e}")
         return []
 
 
 def redeem_code(player_id: str, code: str) -> str:
     """
-    Löst einen einzelnen Code für einen Account ein.
-    Gibt den rohen Ergebnis-String der API zurück.
+    Redeem a single gift code for one account.
+    Returns the raw result string from the API.
     """
-    # 1) Login (verifiziert die Player-ID und holt den Nickname)
+    # Step 1: Login (verifies the Player ID and retrieves nickname)
     login_resp = api_post(LOGIN_URL, {"fid": player_id, "time": int(time.time() * 1000)})
     if not login_resp:
         return "REQUEST_FAILED"
     if login_resp.get("code") != 0:
-        log(f"  ✗ Login fehlgeschlagen: {login_resp.get('msg', '?')}")
+        log(f"  ✗ Login failed: {login_resp.get('msg', '?')}")
         return "LOGIN_FAILED"
 
-    nickname = login_resp.get("data", {}).get("nickname", "Unbekannt")
-    log(f"  👤 Eingeloggt als: {nickname} ({player_id})")
+    nickname = login_resp.get("data", {}).get("nickname", "Unknown")
+    log(f"  👤 Logged in as: {nickname} ({player_id})")
 
-    # 2) Code einlösen
+    # Step 2: Redeem the code
     redeem_resp = api_post(REDEEM_URL, {
         "fid": player_id,
         "cdk": code,
@@ -159,56 +159,56 @@ def redeem_code(player_id: str, code: str) -> str:
 
 
 def check_and_redeem():
-    """Hauptroutine: neue Codes holen und einlösen."""
-    log("🔍 Prüfe auf neue Gift Codes ...")
+    """Main routine: fetch new codes and redeem them."""
+    log("🔍 Checking for new gift codes ...")
     seen = load_seen_codes()
 
     active_codes = fetch_active_codes()
     if not active_codes:
-        log("   Keine Codes von der API erhalten.")
+        log("   No codes received from the API.")
         return
 
     new_codes = [c for c in active_codes if c not in seen]
 
     if not new_codes:
-        log(f"   Keine neuen Codes (bekannt: {len(seen)}, aktiv: {len(active_codes)}).")
+        log(f"   No new codes (known: {len(seen)}, active: {len(active_codes)}).")
         return
 
-    log(f"🎁 {len(new_codes)} neue Code(s) gefunden: {', '.join(new_codes)}")
+    log(f"🎁 {len(new_codes)} new code(s) found: {', '.join(new_codes)}")
 
     for code in new_codes:
-        log(f"\n▶ Löse ein: {code}")
+        log(f"\n▶ Redeeming: {code}")
         result_raw = redeem_code(PLAYER_ID, code)
-        friendly   = RESULT_MESSAGES.get(result_raw, f"Unbekannte Antwort: {result_raw}")
+        friendly   = RESULT_MESSAGES.get(result_raw, f"Unknown response: {result_raw}")
         log(f"  → {friendly}")
 
-        # Code als gesehen markieren (unabhängig vom Ergebnis)
+        # Mark code as seen regardless of result to avoid retrying failed codes
         seen.add(code)
         save_seen_codes(seen)
 
-        time.sleep(1.5)  # kurze Pause zwischen Codes
+        time.sleep(1.5)  # short pause between codes
 
-# ─── EINSTIEGSPUNKT ───────────────────────────────────────────────────────────
+# ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 
 def main():
-    if PLAYER_ID == "DEINE_PLAYER_ID_HIER":
-        print("❌ Bitte trage zuerst deine Player-ID in die Variable PLAYER_ID ein!")
+    if PLAYER_ID == "YOUR_PLAYER_ID_HERE":
+        print("❌ Please set your Player ID in the PLAYER_ID variable first!")
         return
 
     log("=" * 55)
-    log(f"  Kingshot Auto-Redeemer gestartet")
-    log(f"  Player-ID : {PLAYER_ID}")
-    log(f"  Intervall : alle {INTERVAL_MINUTES} Minuten")
+    log("  Kingshot Auto-Redeemer started")
+    log(f"  Player ID : {PLAYER_ID}")
+    log(f"  Interval  : every {INTERVAL_MINUTES} minutes")
     log("=" * 55)
 
     while True:
         try:
             check_and_redeem()
         except Exception as e:
-            log(f"❌ Unerwarteter Fehler: {e}")
+            log(f"❌ Unexpected error: {e}")
 
         next_check = datetime.fromtimestamp(time.time() + INTERVAL_MINUTES * 60)
-        log(f"\n⏰ Nächste Prüfung um {next_check.strftime('%H:%M:%S')} Uhr\n")
+        log(f"\n⏰ Next check at {next_check.strftime('%H:%M:%S')}\n")
         time.sleep(INTERVAL_MINUTES * 60)
 
 
