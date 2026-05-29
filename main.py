@@ -25,7 +25,7 @@ from pathlib import Path
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
-PLAYER_ID = "YOUR_PLAYER_ID_HERE"  # <- enter your Player ID here!
+PLAYER_ID = "307980766"  # <- enter your Player ID here!
 
 INTERVAL_MINUTES = 15  # Check interval in minutes
 
