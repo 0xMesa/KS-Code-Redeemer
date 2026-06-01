@@ -12,10 +12,14 @@ Configuration:
     PLAYER_ID        -> your in-game Player ID (tap Avatar -> top left)
     INTERVAL_MINUTES -> how often to check for new codes (default: 15)
 
-Run:
-    python kingshot_autoredeemer.py
+Run (auto mode):
+    python main.py
+
+Run (manual redeem):
+    python main.py --redeem CODE1 CODE2 ...
 """
 
+import argparse
 import hashlib
 import json
 import time
@@ -25,7 +29,7 @@ from pathlib import Path
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
-PLAYER_ID = "307980766"  # <- enter your Player ID here!
+PLAYER_ID = "XXXXXXXXX"  # <- enter your Player ID here!
 
 INTERVAL_MINUTES = 15  # Check interval in minutes
 
@@ -115,7 +119,6 @@ def fetch_active_codes() -> list[str]:
         resp = requests.get(CODES_API, timeout=15)
         resp.raise_for_status()
         data = resp.json()
-        # API may return a list of strings or a list of objects — handle both
         codes = []
         for item in data:
             if isinstance(item, str):
@@ -158,6 +161,20 @@ def redeem_code(player_id: str, code: str) -> str:
     return str(redeem_resp.get("msg", "UNKNOWN")).strip(".")
 
 
+def process_codes(codes: list[str], mark_seen: bool = True):
+    """Redeem a list of codes and optionally mark them as seen."""
+    seen = load_seen_codes()
+    for code in codes:
+        log(f"\n▶ Redeeming: {code}")
+        result_raw = redeem_code(PLAYER_ID, code)
+        friendly   = RESULT_MESSAGES.get(result_raw, f"Unknown response: {result_raw}")
+        log(f"  → {friendly}")
+        if mark_seen:
+            seen.add(code)
+            save_seen_codes(seen)
+        time.sleep(1.5)
+
+
 def check_and_redeem():
     """Main routine: fetch new codes and redeem them."""
     log("🔍 Checking for new gift codes ...")
@@ -175,18 +192,7 @@ def check_and_redeem():
         return
 
     log(f"🎁 {len(new_codes)} new code(s) found: {', '.join(new_codes)}")
-
-    for code in new_codes:
-        log(f"\n▶ Redeeming: {code}")
-        result_raw = redeem_code(PLAYER_ID, code)
-        friendly   = RESULT_MESSAGES.get(result_raw, f"Unknown response: {result_raw}")
-        log(f"  → {friendly}")
-
-        # Mark code as seen regardless of result to avoid retrying failed codes
-        seen.add(code)
-        save_seen_codes(seen)
-
-        time.sleep(1.5)  # short pause between codes
+    process_codes(new_codes)
 
 # ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 
@@ -195,12 +201,33 @@ def main():
         print("❌ Please set your Player ID in the PLAYER_ID variable first!")
         return
 
+    parser = argparse.ArgumentParser(description="Kingshot Gift Code Auto-Redeemer")
+    parser.add_argument(
+        "--redeem",
+        nargs="+",
+        metavar="CODE",
+        help="Manually redeem one or more codes and exit (e.g. --redeem CODE1 CODE2)"
+    )
+    args = parser.parse_args()
+
     log("=" * 55)
     log("  Kingshot Auto-Redeemer started")
     log(f"  Player ID : {PLAYER_ID}")
-    log(f"  Interval  : every {INTERVAL_MINUTES} minutes")
+    if args.redeem:
+        log(f"  Mode      : manual redeem")
+    else:
+        log(f"  Interval  : every {INTERVAL_MINUTES} minutes")
     log("=" * 55)
 
+    # Manual redeem mode: redeem given codes and exit
+    if args.redeem:
+        codes = [c.strip() for c in args.redeem]
+        log(f"🎁 Manually redeeming {len(codes)} code(s): {', '.join(codes)}")
+        process_codes(codes, mark_seen=True)
+        log("\n✔ Done.")
+        return
+
+    # Auto mode: poll loop
     while True:
         try:
             check_and_redeem()
