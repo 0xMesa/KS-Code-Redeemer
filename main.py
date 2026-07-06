@@ -29,7 +29,7 @@ from pathlib import Path
 
 # ─── CONFIGURATION ────────────────────────────────────────────────────────────
 
-PLAYER_ID = "XXXXXXXXX"  # <- enter your Player ID here!
+PLAYER_ID = ['']  # <- enter your Player ID here!
 
 INTERVAL_MINUTES = 15  # Check interval in minutes
 
@@ -166,13 +166,14 @@ def process_codes(codes: list[str], mark_seen: bool = True):
     seen = load_seen_codes()
     for code in codes:
         log(f"\n▶ Redeeming: {code}")
-        result_raw = redeem_code(PLAYER_ID, code)
-        friendly   = RESULT_MESSAGES.get(result_raw, f"Unknown response: {result_raw}")
-        log(f"  → {friendly}")
-        if mark_seen:
-            seen.add(code)
-            save_seen_codes(seen)
-        time.sleep(1.5)
+        for PLAYER in PLAYER_ID:
+            result_raw = redeem_code(PLAYER, code)
+            friendly   = RESULT_MESSAGES.get(result_raw, f"Unknown response: {result_raw}")
+            log(f"  → {friendly}")
+            if mark_seen:
+                seen.add(code)
+                save_seen_codes(seen)
+            time.sleep(1.5)
 
 
 def check_and_redeem():
@@ -212,7 +213,7 @@ def main():
 
     log("=" * 55)
     log("  Kingshot Auto-Redeemer started")
-    log(f"  Player ID : {PLAYER_ID}")
+    log(f"  Player IDs: {PLAYER_ID}")
     if args.redeem:
         log(f"  Mode      : manual redeem")
     else:
